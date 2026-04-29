@@ -1,0 +1,78 @@
+import cv2
+import yt_dlp
+from ultralytics import YOLO
+import numpy as np
+
+# Get direct YouTube video stream URL
+def get_youtube_stream_url(youtube_url):
+    ydl_opts = {'format': 'best[ext=mp4]', 'quiet': True}
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(youtube_url, download=False)
+            return info['url']
+    except Exception as e:
+        print(f"Error fetching stream URL: {e}")
+        return None
+
+# Load YOLOv8 model (you can use yolov8n.pt, yolov8s.pt, yolov8m.pt, etc.)
+model = YOLO('yolov8n.pt')  # or 'yolov8s.pt' for better accuracy
+
+# Prompt for YouTube video
+youtube_url = input("Enter the YouTube video URL: ")
+stream_url = get_youtube_stream_url(youtube_url)
+if not stream_url:
+    print("Failed to retrieve video stream. Exiting.")
+    exit()
+
+cap = cv2.VideoCapture(stream_url)
+if not cap.isOpened():
+    print("Error: Could not open video stream.")
+    exit()
+
+cv2.namedWindow('Human Detection', cv2.WINDOW_NORMAL)
+
+try:
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            print("Error: Could not read frame or video ended.")
+            break
+
+        # Resize for speed (optional)
+        frame = cv2.resize(frame, (640, 480))
+
+        # Run YOLOv8 inference
+        results = model(frame)[0]
+
+        # Filter only "person" class (class id 0 in COCO dataset)
+        person_detections = [d for d in results.boxes.data.cpu().numpy() if int(d[5]) == 0]
+
+        count = 0
+        for det in person_detections:
+            x1, y1, x2, y2, conf, cls = det
+            x1, y1, x2, y2 = map(int, (x1, y1, x2, y2))
+            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            cv2.putText(frame, f'{conf:.2f}', (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
+            count += 1
+
+        # Draw count on frame
+        cv2.putText(frame, f'Humans: {count}', (10, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+
+        cv2.imshow('Human Detection', frame)
+
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+        if cv2.getWindowProperty('Human Detection', cv2.WND_PROP_VISIBLE) < 1:
+            break
+
+except Exception as e:
+    print(f"An error occurred: {e}")
+
+finally:
+    cap.release()
+    cv2.destroyAllWindows()
+#Videos Used:
+#https://youtu.be/yqHXl13SMr4?si=68UwvlqaNYvGWCCo
+#https://youtu.be/3ecyAHQDsIU?si=HOYWRDKTR4-SSeyX
+#https://youtu.be/0B83bbDO9Qs?si=L--LGYFrZJZNaLKP
